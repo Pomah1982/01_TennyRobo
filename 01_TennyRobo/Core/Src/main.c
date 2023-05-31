@@ -53,7 +53,7 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 // Принимаемая строка, содержащая параметры инфраструктуры
-char str1[6]={0};
+uint8_t receivedStr={0};
 //отправляемая строка, содержащая параметры инфраструктуры
 char trStr[40]={0};
 
@@ -148,7 +148,7 @@ void getTransStr(){
 
 void UART1_RxCpltCallback(void){
 	uint8_t b;
-	b = str1[0];
+	b = receivedStr;
 	if(b=='g' || b=='m' || b=='n' || b=='a' || b=='p' || b=='b' || b=='t'){
 		switch (b) {
 			case 'g':
@@ -163,11 +163,11 @@ void UART1_RxCpltCallback(void){
 			default: setInfValue(b); break;
 		}
 
-		HAL_UART_Receive_IT(&huart1,(uint8_t*)str1,1);
+		HAL_UART_Receive_IT(&huart1,&receivedStr,1);
 		return;
 	}
 	tmpInfValue = 10*tmpInfValue + (b - '0');
-	HAL_UART_Receive_IT(&huart1, (uint8_t*)str1,1);
+	HAL_UART_Receive_IT(&huart1,&receivedStr,1);
 	}
 
 //void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -210,7 +210,7 @@ int main(void)
   MX_TIM2_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UART_Receive_IT(&huart1, (uint8_t*)str1,1); //НА СЛУЧАЙ, ЕСЛ�? СОТРЕТСЯ СТРОКА ЗАПУСКА ПРЕРЫВАН�?Я ПЕРЕД WHILE LOOP
+  HAL_UART_Receive_IT(&huart1, &receivedStr,1); //НА СЛУЧАЙ, ЕСЛ�? СОТРЕТСЯ СТРОКА ЗАПУСКА ПРЕРЫВАН�?Я ПЕРЕД WHILE LOOP
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_Base_Start_IT(&htim2);
   /* USER CODE END 2 */
