@@ -59,12 +59,12 @@ uint8_t receivedStr={0};
 char trStr[40]={0};
 
 uint16_t time = 1000;
-uint16_t speed_min = 800;
-uint16_t speed_max = 2300;
-uint16_t angle_min = 544;
-uint16_t angle_max = 2400;
-uint16_t position_min = 544;
-uint16_t position_max = 2400;
+uint16_t speed_min = 800;//x
+uint16_t speed_max = 2300;//y
+uint16_t angle_min = 400;//z
+uint16_t angle_max = 2400;//u
+uint16_t position_min = 400;//w
+uint16_t position_max = 2400;//v
 
 volatile int tmpInfValue = 0;
 
@@ -94,6 +94,8 @@ uint8_t getIncrement(struct ServoMotor *srv){
 //Сделать шаг для инфрастуктуры согласно текущему и целевому значениям и значению инкремента (плавно повернуть серво или сменить скорость двигателя)
 void incrementValue(struct ServoMotor *srv){
 	if(srv->trgValue == srv->curValue)return;	// Скорость/угол уже установлены
+	if(srv->trgValue < srv->min) srv->trgValue = srv->min;	//защита от утановки значения, меньшего, чем минимальнодопустимое для данного серво
+	if(srv->trgValue > srv->max) srv->trgValue = srv->max;	//защита от установки значения, большего, чем максимально допустимое для данного серво
 	if(srv->curValue < srv->trgValue)	// Необходимо увеличить скорость/угол
 	{
 		srv->curValue += srv->increment;
