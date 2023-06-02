@@ -33,6 +33,7 @@ typedef struct ServoMotor{
 	uint8_t increment;
 	uint16_t min;
 	uint16_t max;
+	uint8_t chanel;
 } ServoMotor;
 /* USER CODE END PTD */
 
@@ -96,21 +97,29 @@ void incrementValue(struct ServoMotor *srv){
 	if(srv->curValue < srv->trgValue)	// Необходимо увеличить скорость/угол
 	{
 		srv->curValue += srv->increment;
-		if(srv->curValue > srv->trgValue) srv->curValue = srv->trgValue;	//если произошел чрезмерный сдвиг, то устанавливаем текущее значение == целевому
+		if(srv->curValue > srv->trgValue){
+			srv->curValue = srv->trgValue;	//если произошел чрезмерный сдвиг, то устанавливаем текущее значение == целевому
+			__HAL_TIM_SetCompare(&htim2, srv->chanel, srv->curValue);
+		}
+
 		return;
 	}
 	//Необходимо уменьшать скорость/угол
 	srv->curValue -= srv->increment;
-	if(srv->curValue < srv->trgValue) srv->curValue = srv->trgValue;	//если произошел чрезмерный сдвиг, то устанавливаем текущее значение == целевому
+	if(srv->curValue < srv->trgValue) {
+		srv->curValue = srv->trgValue;	//если произошел чрезмерный сдвиг, то устанавливаем текущее значение == целевому
+		__HAL_TIM_SetCompare(&htim2, srv->chanel, srv->curValue);	//устанавливаем скважность импульсов pwm
+	}
 }
 
 //Установка основных параметров инфраструктуры
-void initServo(struct ServoMotor *srv,uint16_t min,uint16_t max,uint16_t cur){
+void initServo(struct ServoMotor *srv,uint16_t min,uint16_t max,uint16_t cur,uint8_t chanel){
 	srv->curValue = cur;
 	srv->trgValue = min;
 	srv->min = min;
 	srv->max = max;
 	srv->increment = getIncrement(srv);
+	srv->chanel = chanel;
 }
 
 //Установить новое значение инкремента для инфраструктуры
@@ -121,13 +130,15 @@ void changeIncrement(){
 	Position.increment = getIncrement(&Position);
 }
 
+//Установить первоначальные значения параметров инфраструктуры (min,max,cur)
 void initInfrastructure(){
-	initServo(&MotorTop,speed_min,speed_max, speed_min+1);
-	initServo(&MotorBottom,speed_min,speed_max, speed_min+1);
-	initServo(&Angle,angle_min,angle_max,(angle_min+angle_max)/2);
-	initServo(&Position,position_min,position_max,(position_min+position_max)/2);
+	initServo(&MotorTop,speed_min,speed_max, speed_min+1,TIM_CHANNEL_1);
+	initServo(&MotorBottom,speed_min,speed_max, speed_min+1,TIM_CHANNEL_2);
+	initServo(&Angle,angle_min,angle_max,(angle_min+angle_max)/2,TIM_CHANNEL_3);
+	initServo(&Position,position_min,position_max,(position_min+position_max)/2,TIM_CHANNEL_4);
 }
 
+//Установить значения целевых параметров инфраструктуры согласно полученным с android параметрам
 void setInfValue(char endSymbol){
 	switch (endSymbol){
 	case 'm': MotorTop.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ СКОРОСТЬ ПЕРВОГО ДВ�?ГАТЕЛЯ
@@ -139,6 +150,7 @@ void setInfValue(char endSymbol){
 	tmpInfValue = 0;
 }
 
+//Получить отправляемую строку, содеражщую параметры инфраструктуры
 void getTransStr(){
 	memset(trStr, 0, strlen(trStr));//очищаем строку перед заполнением
 	sprintf(trStr,"%s%d%s%d%s%d%s%d%s%d%c",
@@ -168,15 +180,18 @@ void UART1_RxCpltCallback(void){
 	}
 	tmpInfValue = 10*tmpInfValue + (b - '0');
 	HAL_UART_Receive_IT(&huart1,&receivedStr,1);
-	}
+}
 
-//void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-//{
-//    if (htim->Instance == htim2)
-//    {
-//        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-//    }
-//}
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim == &htim2)
+    {
+    	incrementValue(&MotorTop);
+    	incrementValue(&MotorBottom);
+    	incrementValue(&Angle);
+    	incrementValue(&Position);
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -211,32 +226,19 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_UART_Receive_IT(&huart1, &receivedStr,1); //НА СЛУЧАЙ, ЕСЛ�? СОТРЕТСЯ СТРОКА ЗАПУСКА ПРЕРЫВАН�?Я ПЕРЕД WHILE LOOP
-  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_Base_Start_IT(&htim2);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  int start = 36;
-  int end = 210;
-
-  /////////////////////// ТУТ НЕОБХОДИМО ИНИЦИАЛИЗИРОВАТЬ МОТОРЫ КАК В ARDUINO
   initInfrastructure();	//Инициализируем инфраструктуру
 
   while (1)
   {
-	  for(int i = start; i < end; i++){
-		  htim2.Instance->CCR1=i;
-		  //HAL_UART_Transmit(&huart1,1,8,0x1000);
-		  //HAL_GPIO_TogglePin(GPIOC, LED13_Pin);
-		  HAL_Delay(50);
-	  }
-	  for(int i = end; i > start; i--){
-		  htim2.Instance->CCR1=i;
-		  //HAL_UART_Transmit(&huart1,1,8,0x1000);
-		  //HAL_GPIO_TogglePin(GPIOC, LED13_Pin);
-		  HAL_Delay(50);
-	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
