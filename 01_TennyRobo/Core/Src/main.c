@@ -49,6 +49,7 @@ typedef struct ServoMotor{
 
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
 
@@ -65,6 +66,8 @@ uint16_t angle_min = 400;//z
 uint16_t angle_max = 2400;//u
 uint16_t position_min = 400;//w
 uint16_t position_max = 2400;//v
+uint16_t loader_up = 500;
+uint16_t loader_down = 1300;
 
 volatile int tmpInfValue = 0;
 
@@ -72,6 +75,7 @@ struct ServoMotor MotorTop;
 struct ServoMotor MotorBottom;
 struct ServoMotor Angle;
 struct ServoMotor Position;
+struct ServoMotor Loader;	//механизм подачи мячей
 
 /* USER CODE END PV */
 
@@ -80,6 +84,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -160,6 +165,27 @@ void getTransStr(){
 			"|a:",Angle.curValue,"|p:",Position.curValue,"|t:",time,'e');
 }
 
+//Настройка минимальной и максимальной частот вращения двигателей
+void motorsInitialization(){
+	HAL_Delay(1000);
+	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, speed_max);
+	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, speed_max);
+	HAL_Delay(2000);
+	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, speed_min);
+	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, speed_min);
+	HAL_Delay(1000);
+}
+
+//Поднять загрузчик мячей и взять мяч из лотка
+void loaderUp(){
+	__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, loader_up);
+}
+
+//Опустить загрузчик мячей для сброса мяча в пушку
+void loaderDown(){
+	__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, loader_down);
+}
+
 void UART1_RxCpltCallback(void){
 	uint8_t b;
 	b = receivedStr;
@@ -167,7 +193,7 @@ void UART1_RxCpltCallback(void){
 		switch (b) {
 			case 'g':
 				getTransStr();
-				HAL_UART_Transmit(&huart1, (uint8_t*)trStr, strlen(trStr),0x1000);//НУЖНО ОТПРАВЛЯТЬ ПАРАМЕТРЫ ИНФРАСТРУКТУРЫ
+				HAL_UART_Transmit(&huart1, (uint8_t*)trStr, strlen(trStr),0x1000);//НУЖНО ОТПРАВЛЯТЬ ПАРАМЕТРЫ �?НФРАСТРУКТУРЫ
 				tmpInfValue = 0;
 				break;
 			case 'b': HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);	//ТУТ НАДО ЗАПУСКАТЬ ВЫСТРЕЛ
@@ -204,7 +230,7 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 
-	/* USER CODE END 1 */
+  /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -226,18 +252,23 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM2_Init();
   MX_USART1_UART_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UART_Receive_IT(&huart1, &receivedStr,1); //НА СЛУЧАЙ, ЕСЛ�? СОТРЕТСЯ СТРОКА ЗАПУСКА ПРЕРЫВАН�?Я ПЕРЕД WHILE LOOP
+  HAL_UART_Receive_IT(&huart1, &receivedStr,1);
   HAL_TIM_Base_Start_IT(&htim2);
+  HAL_TIM_Base_Start_IT(&htim3);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+
+  motorsInitialization();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  initInfrastructure();	//Инициализируем инфраструктуру
+  initInfrastructure();	//�?нициализируем инфраструктуру
 
   while (1)
   {
@@ -359,6 +390,55 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 72;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 20000;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -398,12 +478,24 @@ static void MX_USART1_UART_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 /* USER CODE BEGIN MX_GPIO_Init_1 */
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : LED_Pin */
+  GPIO_InitStruct.Pin = LED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
