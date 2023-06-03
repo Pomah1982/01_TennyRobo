@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -68,7 +69,9 @@ uint16_t position_min = 400;//w
 uint16_t position_max = 2400;//v
 uint16_t loader_up = 500;
 uint16_t loader_down = 1300;
-
+volatile bool loader_redy = false;
+volatile uint8_t timer_interupt_count;
+volatile uint16_t period;
 volatile int tmpInfValue = 0;
 
 struct ServoMotor MotorTop;
@@ -145,6 +148,17 @@ void initInfrastructure(){
 	initServo(&Position,position_min,position_max,(position_min+position_max)/2,TIM_CHANNEL_4);
 }
 
+//Поднять загрузчик мячей и взять мяч из лотка
+void loaderUp(){
+	__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, loader_up);
+}
+
+//Опустить загрузчик мячей для сброса мяча в пушку
+void loaderDown(){
+	loader_redy = false;
+	__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, loader_down);
+}
+
 //Установить значения целевых параметров инфраструктуры согласно полученным с android параметрам
 void setInfValue(char endSymbol){
 	switch (endSymbol){
@@ -152,6 +166,7 @@ void setInfValue(char endSymbol){
 	case 'n': MotorBottom.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ СКОРОСТЬ ВТОРОГО ДВ�?ГАТЕЛЯ
 	case 'a': Angle.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ УГОЛ SPIN-a
 	case 'p': Position.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ ПОВОРОТ РОБОТА ВЛЕВО/ВПРАВО
+	case 'b': loaderDown(); break; //Далее сработает прерывание от датчика выстрела и лопатка поднимется вверх
 	default: break;
 	}
 	tmpInfValue = 0;
@@ -174,16 +189,6 @@ void motorsInitialization(){
 	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, speed_min);
 	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, speed_min);
 	HAL_Delay(1000);
-}
-
-//Поднять загрузчик мячей и взять мяч из лотка
-void loaderUp(){
-	__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, loader_up);
-}
-
-//Опустить загрузчик мячей для сброса мяча в пушку
-void loaderDown(){
-	__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, loader_down);
 }
 
 void UART1_RxCpltCallback(void){
@@ -219,6 +224,26 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     	incrementValue(&Angle);
     	incrementValue(&Position);
     }
+    if (htim == &htim3)
+    {
+    	timer_interupt_count++;
+    	if(timer_interupt_count >= period){
+    		if(loader_redy){
+    			loaderDown();
+    		}
+    		else timer_interupt_count = period;//Если мяч не упал в загрузчик мячей, то ждем до следующего прерывания таймера (20мС)
+    	}
+    }
+}
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	if(GPIO_Pin== LOAD_SENSOR_Pin) {
+		loader_redy = true;
+	}
+	if(GPIO_Pin== PUSH_SENSOR_Pin) {
+		loaderUp();
+	}
 }
 /* USER CODE END 0 */
 
@@ -263,12 +288,12 @@ int main(void)
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 
+  initInfrastructure();	//Инициализируем инфраструктуру
   motorsInitialization();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  initInfrastructure();	//�?нициализируем инфраструктуру
 
   while (1)
   {
@@ -496,6 +521,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : LOAD_SENSOR_Pin PUSH_SENSOR_Pin */
+  GPIO_InitStruct.Pin = LOAD_SENSOR_Pin|PUSH_SENSOR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
