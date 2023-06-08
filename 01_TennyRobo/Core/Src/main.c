@@ -34,6 +34,7 @@ typedef struct ServoMotor{
 	uint8_t increment;
 	uint16_t min;
 	uint16_t max;
+	uint16_t initValue;
 	uint8_t chanel;
 } ServoMotor;
 /* USER CODE END PTD */
@@ -58,20 +59,27 @@ UART_HandleTypeDef huart1;
 // Принимаемая строка, содержащая параметры инфраструктуры
 uint8_t receivedStr={0};
 //отправляемая строка, содержащая параметры инфраструктуры
-char trStr[40]={0};
+char trStr[60]={0};
 
 uint16_t time = 1000;
-uint16_t speed_min = 800;//x
-uint16_t speed_max = 2300;//y
-uint16_t angle_min = 400;//z
-uint16_t angle_max = 2400;//u
-uint16_t position_min = 400;//w
-uint16_t position_max = 2400;//v
-uint16_t loader_up = 500;
-uint16_t loader_down = 1300;
+uint16_t time_min = 500;
+uint16_t time_max = 3000;
+uint16_t speed_min = 800;
+uint16_t speed_max = 2300;
+uint16_t angle_min = 400;
+uint16_t angle_max = 2400;
+uint16_t position_min = 400;
+uint16_t position_max = 2400;
+uint16_t loader_up = 1300;
+uint16_t loader_down = 500;
+uint16_t mixer_min = 400;
+uint16_t mixer_max = 2400;
+uint16_t start_speed = 865;
+uint16_t start_angle = 1400;
 volatile bool loader_redy = false;
 volatile uint8_t timer_interupt_count;
 volatile uint16_t period;
+volatile bool infIsInetialized = false;
 volatile int tmpInfValue = 0;
 
 struct ServoMotor MotorTop;
@@ -79,6 +87,7 @@ struct ServoMotor MotorBottom;
 struct ServoMotor Angle;
 struct ServoMotor Position;
 struct ServoMotor Loader;	//механизм подачи мячей
+struct ServoMotor TopBollsMixer; //перемешиватель мячей в чаше пушки
 
 /* USER CODE END PV */
 
@@ -100,7 +109,7 @@ uint8_t getIncrement(struct ServoMotor *srv){
 }
 
 //Сделать шаг для инфрастуктуры согласно текущему и целевому значениям и значению инкремента (плавно повернуть серво или сменить скорость двигателя)
-void incrementValue(struct ServoMotor *srv){
+void incrementValue(struct ServoMotor *srv, TIM_HandleTypeDef htim){
 	if(srv->trgValue == srv->curValue)return;	// Скорость/угол уже установлены
 	if(srv->trgValue < srv->min) srv->trgValue = srv->min;	//защита от утановки значения, меньшего, чем минимальнодопустимое для данного серво
 	if(srv->trgValue > srv->max) srv->trgValue = srv->max;	//защита от установки значения, большего, чем максимально допустимое для данного серво
@@ -109,7 +118,7 @@ void incrementValue(struct ServoMotor *srv){
 		srv->curValue += srv->increment;
 		if(srv->curValue > srv->trgValue){
 			srv->curValue = srv->trgValue;	//если произошел чрезмерный сдвиг, то устанавливаем текущее значение == целевому
-			__HAL_TIM_SetCompare(&htim2, srv->chanel, srv->curValue);
+			__HAL_TIM_SetCompare(&htim, srv->chanel, srv->curValue);
 		}
 
 		return;
@@ -118,14 +127,15 @@ void incrementValue(struct ServoMotor *srv){
 	srv->curValue -= srv->increment;
 	if(srv->curValue < srv->trgValue) {
 		srv->curValue = srv->trgValue;	//если произошел чрезмерный сдвиг, то устанавливаем текущее значение == целевому
-		__HAL_TIM_SetCompare(&htim2, srv->chanel, srv->curValue);	//устанавливаем скважность импульсов pwm
+		__HAL_TIM_SetCompare(&htim, srv->chanel, srv->curValue);	//устанавливаем скважность импульсов pwm
 	}
 }
 
 //Установка основных параметров инфраструктуры
-void initServo(struct ServoMotor *srv,uint16_t min,uint16_t max,uint16_t cur,uint8_t chanel){
-	srv->curValue = cur;
-	srv->trgValue = min;
+void initServo(struct ServoMotor *srv,uint16_t min,uint16_t max,uint16_t initValue,uint8_t chanel){
+	srv->initValue = initValue;
+	srv->curValue = initValue + 1;
+	srv->trgValue = initValue;
 	srv->min = min;
 	srv->max = max;
 	srv->increment = getIncrement(srv);
@@ -138,14 +148,16 @@ void changeIncrement(){
 	MotorBottom.increment = getIncrement(&MotorBottom);
 	Angle.increment = getIncrement(&Angle);
 	Position.increment = getIncrement(&Position);
+	period = time / 20;
 }
 
 //Установить первоначальные значения параметров инфраструктуры (min,max,cur)
 void initInfrastructure(){
-	initServo(&MotorTop,speed_min,speed_max, speed_min+1,TIM_CHANNEL_1);
-	initServo(&MotorBottom,speed_min,speed_max, speed_min+1,TIM_CHANNEL_2);
-	initServo(&Angle,angle_min,angle_max,(angle_min+angle_max)/2,TIM_CHANNEL_3);
-	initServo(&Position,position_min,position_max,(position_min+position_max)/2,TIM_CHANNEL_4);
+	initServo(&MotorTop,speed_min,speed_max, start_speed,TIM_CHANNEL_1);
+	initServo(&MotorBottom,speed_min,speed_max, start_speed,TIM_CHANNEL_2);
+	initServo(&Angle,angle_min,angle_max,start_angle,TIM_CHANNEL_3);
+	initServo(&Position,position_min,position_max,start_angle,TIM_CHANNEL_4);
+	initServo(&TopBollsMixer,mixer_min,mixer_max,mixer_min + 1,TIM_CHANNEL_2);
 }
 
 //Поднять загрузчик мячей и взять мяч из лотка
@@ -155,7 +167,6 @@ void loaderUp(){
 
 //Опустить загрузчик мячей для сброса мяча в пушку
 void loaderDown(){
-	loader_redy = false;
 	__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, loader_down);
 }
 
@@ -166,18 +177,28 @@ void setInfValue(char endSymbol){
 	case 'n': MotorBottom.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ СКОРОСТЬ ВТОРОГО ДВ�?ГАТЕЛЯ
 	case 'a': Angle.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ УГОЛ SPIN-a
 	case 'p': Position.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ ПОВОРОТ РОБОТА ВЛЕВО/ВПРАВО
-	case 'b': loaderDown(); break; //Далее сработает прерывание от датчика выстрела и лопатка поднимется вверх
 	default: break;
 	}
 	tmpInfValue = 0;
 }
 
 //Получить отправляемую строку, содеражщую параметры инфраструктуры
-void getTransStr(){
-	memset(trStr, 0, strlen(trStr));//очищаем строку перед заполнением
-	sprintf(trStr,"%s%d%s%d%s%d%s%d%s%d%c",
-			"m:",MotorTop.curValue,"|n:",MotorBottom.curValue,
-			"|a:",Angle.curValue,"|p:",Position.curValue,"|t:",time,'e');
+void getTransStr(uint8_t quarySymbol){
+	if(quarySymbol == 'l'){}
+	switch (quarySymbol){
+	case 'l':
+		memset(trStr, 0, strlen(trStr));//очищаем строку перед заполнением
+		sprintf(trStr,"%s%d%c%d%s%d%c%d%s%d%c%d%s%d%c%d%s%d%c%d%c",
+				"m:",MotorTop.min,':',MotorTop.max,"|n:",MotorBottom.min,':',MotorBottom.max,
+				"|a:",Angle.min,':',Angle.max,"|p:",Position.min,':',Position.max,"|t:",time_min,':',time_max,'e');
+		break;
+	case 'g':
+		memset(trStr, 0, strlen(trStr));//очищаем строку перед заполнением
+		sprintf(trStr,"%s%d%s%d%s%d%s%d%s%d%c",
+				"m:",MotorTop.curValue,"|n:",MotorBottom.curValue,
+				"|a:",Angle.curValue,"|p:",Position.curValue,"|t:",time,'e');
+		break;
+	}
 }
 
 //Настройка минимальной и максимальной частот вращения двигателей
@@ -194,14 +215,17 @@ void motorsInitialization(){
 void UART1_RxCpltCallback(void){
 	uint8_t b;
 	b = receivedStr;
-	if(b=='g' || b=='m' || b=='n' || b=='a' || b=='p' || b=='b' || b=='t'){
+	if(b =='l' || b=='g' || b=='m' || b=='n' || b=='a' || b=='p' || b=='b' || b=='t'){
 		switch (b) {
+			case 'l':
 			case 'g':
-				getTransStr();
-				HAL_UART_Transmit(&huart1, (uint8_t*)trStr, strlen(trStr),0x1000);//НУЖНО ОТПРАВЛЯТЬ ПАРАМЕТРЫ �?НФРАСТРУКТУРЫ
+				getTransStr(b);
+				HAL_UART_Transmit(&huart1, (uint8_t*)trStr, strlen(trStr),0x1000);
 				tmpInfValue = 0;
 				break;
-			case 'b': HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);	//ТУТ НАДО ЗАПУСКАТЬ ВЫСТРЕЛ
+			case 'b': HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+				timer_interupt_count = 0; //сбрасываем счетчик прерываний, считающий время до следующего выстрела
+				loaderDown(); //�?нициализация выстрела. Далее сработает прерывание от датчика выстрела и лопатка вернется в верхнее положение
 				tmpInfValue = 0;
 				break;
 			case 't': time = tmpInfValue; tmpInfValue = 0; changeIncrement();
@@ -217,19 +241,24 @@ void UART1_RxCpltCallback(void){
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    if (htim == &htim2)
+    if (infIsInetialized && htim == &htim2)
     {
-    	incrementValue(&MotorTop);
-    	incrementValue(&MotorBottom);
-    	incrementValue(&Angle);
-    	incrementValue(&Position);
+    	incrementValue(&MotorTop, htim2);
+    	incrementValue(&MotorBottom, htim2);
+    	incrementValue(&Angle, htim2);
+    	incrementValue(&Position, htim2);
     }
-    if (htim == &htim3)
+    if (infIsInetialized && htim == &htim3)
     {
+    	incrementValue(&TopBollsMixer, htim3);
+    	if(TopBollsMixer.curValue == TopBollsMixer.min) TopBollsMixer.trgValue = TopBollsMixer.max;
+    	if(TopBollsMixer.curValue == TopBollsMixer.max) TopBollsMixer.trgValue = TopBollsMixer.min;
+
     	timer_interupt_count++;
     	if(timer_interupt_count >= period){
     		if(loader_redy){
     			loaderDown();
+    			timer_interupt_count = 0; //сбрасываем счетчик прерываний, чтоб начать заново отчет времени до следующего выстрела
     		}
     		else timer_interupt_count = period;//Если мяч не упал в загрузчик мячей, то ждем до следующего прерывания таймера (20мС)
     	}
@@ -241,7 +270,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	if(GPIO_Pin== LOAD_SENSOR_Pin) {
 		loader_redy = true;
 	}
-	if(GPIO_Pin== PUSH_SENSOR_Pin) {
+	if(GPIO_Pin== PUSH_SENSOR_Pin && loader_redy == true)
+	{
+		loader_redy = false;
 		loaderUp();
 	}
 }
@@ -288,12 +319,14 @@ int main(void)
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 
-  initInfrastructure();	//Инициализируем инфраструктуру
   motorsInitialization();
+  initInfrastructure();	//�?нициализируем инфраструктуру
+  period = time / 20;	//Устанавливаем первоначальное значение периода между выстрелами
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  infIsInetialized = true;	//устанавливаем разрешение на обработку изменений состояний серво и моторов
 
   while (1)
   {
@@ -433,9 +466,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 72;
+  htim3.Init.Prescaler = 72-1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 20000;
+  htim3.Init.Period = 20000-1;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
@@ -453,6 +486,10 @@ static void MX_TIM3_Init(void)
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
   }
