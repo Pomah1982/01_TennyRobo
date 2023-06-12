@@ -66,15 +66,15 @@ uint16_t time_min = 500;
 uint16_t time_max = 3000;
 uint16_t speed_min = 800;
 uint16_t speed_max = 2300;
-uint16_t angle_min = 400;
-uint16_t angle_max = 2400;
-uint16_t position_min = 400;
-uint16_t position_max = 2400;
-uint16_t loader_up = 1300;
+uint16_t angle_min = 900;
+uint16_t angle_max = 2100;
+uint16_t position_min = 1200;
+uint16_t position_max = 1600;
+uint16_t loader_up = 1250;
 uint16_t loader_down = 500;
 uint16_t mixer_min = 400;
 uint16_t mixer_max = 2400;
-uint16_t start_speed = 865;
+uint16_t start_speed = 840;
 uint16_t start_angle = 1400;
 volatile bool loader_redy = false;
 volatile uint8_t timer_interupt_count;
@@ -118,17 +118,16 @@ void incrementValue(struct ServoMotor *srv, TIM_HandleTypeDef htim){
 		srv->curValue += srv->increment;
 		if(srv->curValue > srv->trgValue){
 			srv->curValue = srv->trgValue;	//если произошел чрезмерный сдвиг, то устанавливаем текущее значение == целевому
-			__HAL_TIM_SetCompare(&htim, srv->chanel, srv->curValue);
 		}
-
+		__HAL_TIM_SetCompare(&htim, srv->chanel, srv->curValue);
 		return;
 	}
 	//Необходимо уменьшать скорость/угол
 	srv->curValue -= srv->increment;
 	if(srv->curValue < srv->trgValue) {
 		srv->curValue = srv->trgValue;	//если произошел чрезмерный сдвиг, то устанавливаем текущее значение == целевому
-		__HAL_TIM_SetCompare(&htim, srv->chanel, srv->curValue);	//устанавливаем скважность импульсов pwm
 	}
+	__HAL_TIM_SetCompare(&htim, srv->chanel, srv->curValue);	//устанавливаем скважность импульсов pwm
 }
 
 //Установка основных параметров инфраструктуры
@@ -138,7 +137,7 @@ void initServo(struct ServoMotor *srv,uint16_t min,uint16_t max,uint16_t initVal
 	srv->trgValue = initValue;
 	srv->min = min;
 	srv->max = max;
-	srv->increment = getIncrement(srv);
+	srv->increment = srv == &TopBollsMixer ? 30 : getIncrement(srv);
 	srv->chanel = chanel;
 }
 
@@ -148,16 +147,17 @@ void changeIncrement(){
 	MotorBottom.increment = getIncrement(&MotorBottom);
 	Angle.increment = getIncrement(&Angle);
 	Position.increment = getIncrement(&Position);
+	//TopBollsMixer.increment = 10;
 	period = time / 20;
 }
 
 //Установить первоначальные значения параметров инфраструктуры (min,max,cur)
 void initInfrastructure(){
-	initServo(&MotorTop,speed_min,speed_max, start_speed,TIM_CHANNEL_1);
-	initServo(&MotorBottom,speed_min,speed_max, start_speed,TIM_CHANNEL_2);
+	initServo(&MotorTop,start_speed,speed_max, start_speed,TIM_CHANNEL_1);
+	initServo(&MotorBottom,start_speed,speed_max, start_speed,TIM_CHANNEL_2);
 	initServo(&Angle,angle_min,angle_max,start_angle,TIM_CHANNEL_3);
 	initServo(&Position,position_min,position_max,start_angle,TIM_CHANNEL_4);
-	initServo(&TopBollsMixer,mixer_min,mixer_max,mixer_min + 1,TIM_CHANNEL_2);
+	initServo(&TopBollsMixer,mixer_min,mixer_max,mixer_min,TIM_CHANNEL_2);
 }
 
 //Поднять загрузчик мячей и взять мяч из лотка
@@ -209,7 +209,7 @@ void motorsInitialization(){
 	HAL_Delay(2000);
 	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, speed_min);
 	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, speed_min);
-	HAL_Delay(1000);
+	HAL_Delay(4000);
 }
 
 void UART1_RxCpltCallback(void){
@@ -247,14 +247,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     	incrementValue(&MotorBottom, htim2);
     	incrementValue(&Angle, htim2);
     	incrementValue(&Position, htim2);
-    }
-    if (infIsInetialized && htim == &htim3)
-    {
+
     	incrementValue(&TopBollsMixer, htim3);
+
     	if(TopBollsMixer.curValue == TopBollsMixer.min) TopBollsMixer.trgValue = TopBollsMixer.max;
     	if(TopBollsMixer.curValue == TopBollsMixer.max) TopBollsMixer.trgValue = TopBollsMixer.min;
 
-    	timer_interupt_count++;
     	if(timer_interupt_count >= period){
     		if(loader_redy){
     			loaderDown();
@@ -263,6 +261,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     		else timer_interupt_count = period;//Если мяч не упал в загрузчик мячей, то ждем до следующего прерывания таймера (20мС)
     	}
     }
+//    if (infIsInetialized && htim == &htim3)
+//    {
+//    	incrementValue(&TopBollsMixer, htim3);
+//    	if(TopBollsMixer.curValue == TopBollsMixer.min) TopBollsMixer.trgValue = TopBollsMixer.max;
+//    	if(TopBollsMixer.curValue == TopBollsMixer.max) TopBollsMixer.trgValue = TopBollsMixer.min;
+//
+//    	if(timer_interupt_count >= period){
+//    		if(loader_redy){
+//    			loaderDown();
+//    			timer_interupt_count = 0; //сбрасываем счетчик прерываний, чтоб начать заново отчет времени до следующего выстрела
+//    		}
+//    		else timer_interupt_count = period;//Если мяч не упал в загрузчик мячей, то ждем до следующего прерывания таймера (20мС)
+//    	}
+//    }
+	timer_interupt_count++;
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -318,6 +331,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
 
   motorsInitialization();
   initInfrastructure();	//�?нициализируем инфраструктуру
@@ -459,6 +473,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 0 */
 
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
   TIM_OC_InitTypeDef sConfigOC = {0};
 
@@ -471,6 +486,15 @@ static void MX_TIM3_Init(void)
   htim3.Init.Period = 20000-1;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
