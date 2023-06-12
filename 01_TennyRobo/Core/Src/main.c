@@ -62,8 +62,8 @@ uint8_t receivedStr={0};
 char trStr[60]={0};
 
 uint16_t time = 1000;
-uint16_t time_min = 500;
-uint16_t time_max = 3000;
+uint16_t time_min = 1200;//НАДО РАЗОБРАТЬСЯ ПОЧЕМУ ВРЕМЯ ВЫСТРЕЛА В ДВА РАЗА КОРОЧЕ ВЫСТАВЛЕННОГО И ВЕРНУТЬ 600 (0,6 сек)
+uint16_t time_max = 6000;//НАДО РАЗОБРАТЬСЯ ПОЧЕМУ ВРЕМЯ ВЫСТРЕЛА В ДВА РАЗА КОРОЧЕ ВЫСТАВЛЕННОГО И ВЕРНУТЬ ЗНАЧЕНИЕ 3000 (3 сек)
 uint16_t speed_min = 800;
 uint16_t speed_max = 2300;
 uint16_t angle_min = 900;
@@ -77,10 +77,11 @@ uint16_t mixer_max = 2400;
 uint16_t start_speed = 840;
 uint16_t start_angle = 1400;
 volatile bool loader_redy = false;
-volatile uint8_t timer_interupt_count;
+volatile uint16_t timer_interupt_count;
 volatile uint16_t period;
 volatile bool infIsInetialized = false;
 volatile int tmpInfValue = 0;
+volatile uint8_t loader_timeout = 0;
 
 struct ServoMotor MotorTop;
 struct ServoMotor MotorBottom;
@@ -254,11 +255,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     	if(TopBollsMixer.curValue == TopBollsMixer.max) TopBollsMixer.trgValue = TopBollsMixer.min;
 
     	if(timer_interupt_count >= period){
-    		if(loader_redy){
+    		if(/*loader_redy*/ HAL_GPIO_ReadPin(GPIOA, LOAD_SENSOR_Pin) == GPIO_PIN_RESET &&
+    				(MotorTop.curValue > MotorTop.min || MotorBottom.curValue > MotorBottom.min)){	//Не обрабатываем прерывания до тех пор пока не запустится хотябы один из двигателей
     			loaderDown();
     			timer_interupt_count = 0; //сбрасываем счетчик прерываний, чтоб начать заново отчет времени до следующего выстрела
+    			loader_timeout = 25;
     		}
     		else timer_interupt_count = period;//Если мяч не упал в загрузчик мячей, то ждем до следующего прерывания таймера (20мС)
+    	}
+
+    	if(loader_timeout != 0){
+    		if(--loader_timeout == 1){
+    			loaderUp();
+    			loader_timeout = 0;
+    		}
     	}
     }
 //    if (infIsInetialized && htim == &htim3)
@@ -280,14 +290,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	if(GPIO_Pin== LOAD_SENSOR_Pin) {
-		loader_redy = true;
-	}
-	if(GPIO_Pin== PUSH_SENSOR_Pin && loader_redy == true)
-	{
-		loader_redy = false;
-		loaderUp();
-	}
+	//Закомментировал обработчик, тк. перевел обработку прерывания и движение лопатки загрузчика в обработчик прерываний TIM2
+//	if(GPIO_Pin== LOAD_SENSOR_Pin) {
+//		loader_redy = true;
+//	}
+//	if(GPIO_Pin== PUSH_SENSOR_Pin && loader_redy == true)
+//	{
+//		loader_redy = false;
+//		loaderUp();
+//	}
 }
 /* USER CODE END 0 */
 
