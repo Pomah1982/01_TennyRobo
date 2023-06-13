@@ -62,8 +62,8 @@ uint8_t receivedStr={0};
 char trStr[60]={0};
 
 uint16_t time = 1000;
-uint16_t time_min = 1200;//НАДО РАЗОБРАТЬСЯ ПОЧЕМУ ВРЕМЯ ВЫСТРЕЛА В ДВА РАЗА КОРОЧЕ ВЫСТАВЛЕННОГО И ВЕРНУТЬ 600 (0,6 сек)
-uint16_t time_max = 6000;//НАДО РАЗОБРАТЬСЯ ПОЧЕМУ ВРЕМЯ ВЫСТРЕЛА В ДВА РАЗА КОРОЧЕ ВЫСТАВЛЕННОГО И ВЕРНУТЬ ЗНАЧЕНИЕ 3000 (3 сек)
+uint16_t time_min = 600;
+uint16_t time_max = 3000;
 uint16_t speed_min = 800;
 uint16_t speed_max = 2300;
 uint16_t angle_min = 900;
@@ -149,7 +149,7 @@ void changeIncrement(){
 	Angle.increment = getIncrement(&Angle);
 	Position.increment = getIncrement(&Position);
 	//TopBollsMixer.increment = 10;
-	period = time / 20;
+	period = time / 50;
 }
 
 //Установить первоначальные значения параметров инфраструктуры (min,max,cur)
@@ -347,7 +347,7 @@ int main(void)
 
   motorsInitialization();
   initInfrastructure();	//�?нициализируем инфраструктуру
-  period = time / 20;	//Устанавливаем первоначальное значение периода между выстрелами
+  period = time / 50;	//Устанавливаем первоначальное значение периода между выстрелами
   /* USER CODE END 2 */
 
   /* Infinite loop */
