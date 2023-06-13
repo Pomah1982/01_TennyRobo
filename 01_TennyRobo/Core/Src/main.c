@@ -150,7 +150,7 @@ void changeIncrement(){
 	Angle.increment = getIncrement(&Angle);
 	Position.increment = getIncrement(&Position);
 	//TopBallsMixer.increment = 10;
-	period = time / 50;
+	period = time / 10;//НЕОБХОДИМО РАЗОБРАТЬСЯ ПОЧЕМУ ВЫЧИСЛЯЕТСЯ НЕПРАВИЛЬНОЕ ВРЕМЯ - РАСЧЕТНОЕ ЗНАЧЕНИЕ 20, НО ПРИ НЕМ РАССТОЯНИЕ МЕЖДУ ВЫСТРЕЛАМИ В 2 РАЗА МЕНЬШЕ
 }
 
 //Установить первоначальные значения параметров инфраструктуры (min,max,cur)
@@ -242,6 +242,41 @@ void UART1_RxCpltCallback(void){
 	HAL_UART_Receive_IT(&huart1,&receivedStr,1);
 }
 
+void loaderServoInteruptHandler(){
+	if(timer_interupt_count >= period){
+		if(/*loader_redy*/ HAL_GPIO_ReadPin(GPIOA, LOAD_SENSOR_Pin) == GPIO_PIN_RESET &&
+				(MotorTop.curValue > MotorTop.min || MotorBottom.curValue > MotorBottom.min)){	//Не обрабатываем прерывания до тех пор пока не запустится хотябы один из двигателей
+			loaderDown();
+			timer_interupt_count = 0; //сбрасываем счетчик прерываний, чтоб начать заново отчет времени до следующего выстрела
+			loader_timeout = 10;
+		}
+		//else timer_interupt_count = period;//Если мяч не упал в загрузчик мячей, то ждем до следующего прерывания таймера (20мС)
+	}
+
+	if(loader_timeout != 0){
+		if(--loader_timeout == 1){
+			loaderUp();
+			loader_timeout = 0;
+		}
+	}
+}
+
+void ballsMixerInteruptHandler(){
+	if(TopBallsMixer.curValue == TopBallsMixer.min) {
+		if(mixer_end_point-- == 0){
+    		TopBallsMixer.trgValue = TopBallsMixer.max;
+    		mixer_end_point = 10;
+		}
+	}
+
+	if(TopBallsMixer.curValue == TopBallsMixer.max) {
+		if(mixer_end_point-- == 0){
+    		TopBallsMixer.trgValue = TopBallsMixer.min;
+    		mixer_end_point = 10;
+		}
+	}
+}
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (infIsInetialized && htim == &htim2)
@@ -253,51 +288,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
     	incrementValue(&TopBallsMixer, htim3);
 
-    	if(TopBallsMixer.curValue == TopBallsMixer.min) {
-    		if(mixer_end_point-- == 0){
-        		TopBallsMixer.trgValue = TopBallsMixer.max;
-        		mixer_end_point = 10;
-    		}
-    	}
-
-    	if(TopBallsMixer.curValue == TopBallsMixer.max) {
-    		if(mixer_end_point-- == 0){
-        		TopBallsMixer.trgValue = TopBallsMixer.min;
-        		mixer_end_point = 10;
-    		}
-    	}
-
-    	if(timer_interupt_count >= period){
-    		if(/*loader_redy*/ HAL_GPIO_ReadPin(GPIOA, LOAD_SENSOR_Pin) == GPIO_PIN_RESET &&
-    				(MotorTop.curValue > MotorTop.min || MotorBottom.curValue > MotorBottom.min)){	//Не обрабатываем прерывания до тех пор пока не запустится хотябы один из двигателей
-    			loaderDown();
-    			timer_interupt_count = 0; //сбрасываем счетчик прерываний, чтоб начать заново отчет времени до следующего выстрела
-    			loader_timeout = 25;
-    		}
-    		else timer_interupt_count = period;//Если мяч не упал в загрузчик мячей, то ждем до следующего прерывания таймера (20мС)
-    	}
-
-    	if(loader_timeout != 0){
-    		if(--loader_timeout == 1){
-    			loaderUp();
-    			loader_timeout = 0;
-    		}
-    	}
+    	ballsMixerInteruptHandler();
+    	loaderServoInteruptHandler();
     }
-//    if (infIsInetialized && htim == &htim3)
-//    {
-//    	incrementValue(&TopBollsMixer, htim3);
-//    	if(TopBollsMixer.curValue == TopBollsMixer.min) TopBollsMixer.trgValue = TopBollsMixer.max;
-//    	if(TopBollsMixer.curValue == TopBollsMixer.max) TopBollsMixer.trgValue = TopBollsMixer.min;
-//
-//    	if(timer_interupt_count >= period){
-//    		if(loader_redy){
-//    			loaderDown();
-//    			timer_interupt_count = 0; //сбрасываем счетчик прерываний, чтоб начать заново отчет времени до следующего выстрела
-//    		}
-//    		else timer_interupt_count = period;//Если мяч не упал в загрузчик мячей, то ждем до следующего прерывания таймера (20мС)
-//    	}
-//    }
+
 	timer_interupt_count++;
 }
 
@@ -359,7 +353,8 @@ int main(void)
 
   motorsInitialization();
   initInfrastructure();	//�?нициализируем инфраструктуру
-  period = time / 50;	//Устанавливаем первоначальное значение периода между выстрелами
+  //НЕОБХОДИМО РАЗОБРАТЬСЯ ПОЧЕМУ ВЫЧИСЛЯЕТСЯ НЕПРАВИЛЬНОЕ ВРЕМЯ - РАСЧЕТНОЕ ЗНАЧЕНИЕ 20, НО ПРИ НЕМ РАССТОЯНИЕ МЕЖДУ ВЫСТРЕЛАМИ В 2 РАЗА МЕНЬШЕ
+  period = time / 10;	//Устанавливаем первоначальное значение периода между выстрелами
   /* USER CODE END 2 */
 
   /* Infinite loop */
