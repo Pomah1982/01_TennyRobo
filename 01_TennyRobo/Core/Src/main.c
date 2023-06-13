@@ -225,8 +225,9 @@ void UART1_RxCpltCallback(void){
 				tmpInfValue = 0;
 				break;
 			case 'b': HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-				timer_interupt_count = 0; //сбрасываем счетчик прерываний, считающий время до следующего выстрела
-				loaderDown(); //�?нициализация выстрела. Далее сработает прерывание от датчика выстрела и лопатка вернется в верхнее положение
+				timer_interupt_count = period - 2; //Через 2*20мс прерывание TIM2 обработает нажатие кнопки и опустит, а потом поднимет лопатку loader-а
+//				timer_interupt_count = 0; //сбрасываем счетчик прерываний, считающий время до следующего выстрела
+//				loaderDown(); //�?нициализация выстрела. Далее сработает прерывание от датчика выстрела и лопатка вернется в верхнее положение
 				tmpInfValue = 0;
 				break;
 			case 't': time = tmpInfValue; tmpInfValue = 0; changeIncrement();
