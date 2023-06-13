@@ -82,13 +82,14 @@ volatile uint16_t period;
 volatile bool infIsInetialized = false;
 volatile int tmpInfValue = 0;
 volatile uint8_t loader_timeout = 0;
+volatile uint8_t mixer_end_point = 5;
 
 struct ServoMotor MotorTop;
 struct ServoMotor MotorBottom;
 struct ServoMotor Angle;
 struct ServoMotor Position;
 struct ServoMotor Loader;	//механизм подачи мячей
-struct ServoMotor TopBollsMixer; //перемешиватель мячей в чаше пушки
+struct ServoMotor TopBallsMixer; //перемешиватель мячей в чаше пушки
 
 /* USER CODE END PV */
 
@@ -138,7 +139,7 @@ void initServo(struct ServoMotor *srv,uint16_t min,uint16_t max,uint16_t initVal
 	srv->trgValue = initValue;
 	srv->min = min;
 	srv->max = max;
-	srv->increment = srv == &TopBollsMixer ? 30 : getIncrement(srv);
+	srv->increment = srv == &TopBallsMixer ? 30 : getIncrement(srv);
 	srv->chanel = chanel;
 }
 
@@ -148,7 +149,7 @@ void changeIncrement(){
 	MotorBottom.increment = getIncrement(&MotorBottom);
 	Angle.increment = getIncrement(&Angle);
 	Position.increment = getIncrement(&Position);
-	//TopBollsMixer.increment = 10;
+	//TopBallsMixer.increment = 10;
 	period = time / 50;
 }
 
@@ -158,7 +159,7 @@ void initInfrastructure(){
 	initServo(&MotorBottom,start_speed,speed_max, start_speed,TIM_CHANNEL_2);
 	initServo(&Angle,angle_min,angle_max,start_angle,TIM_CHANNEL_3);
 	initServo(&Position,position_min,position_max,start_angle,TIM_CHANNEL_4);
-	initServo(&TopBollsMixer,mixer_min,mixer_max,mixer_min,TIM_CHANNEL_2);
+	initServo(&TopBallsMixer,mixer_min,mixer_max,mixer_min,TIM_CHANNEL_2);
 }
 
 //Поднять загрузчик мячей и взять мяч из лотка
@@ -250,10 +251,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     	incrementValue(&Angle, htim2);
     	incrementValue(&Position, htim2);
 
-    	incrementValue(&TopBollsMixer, htim3);
+    	incrementValue(&TopBallsMixer, htim3);
 
-    	if(TopBollsMixer.curValue == TopBollsMixer.min) TopBollsMixer.trgValue = TopBollsMixer.max;
-    	if(TopBollsMixer.curValue == TopBollsMixer.max) TopBollsMixer.trgValue = TopBollsMixer.min;
+    	if(TopBallsMixer.curValue == TopBallsMixer.min) {
+    		if(mixer_end_point-- == 0){
+        		TopBallsMixer.trgValue = TopBallsMixer.max;
+        		mixer_end_point = 10;
+    		}
+    	}
+
+    	if(TopBallsMixer.curValue == TopBallsMixer.max) {
+    		if(mixer_end_point-- == 0){
+        		TopBallsMixer.trgValue = TopBallsMixer.min;
+        		mixer_end_point = 10;
+    		}
+    	}
 
     	if(timer_interupt_count >= period){
     		if(/*loader_redy*/ HAL_GPIO_ReadPin(GPIOA, LOAD_SENSOR_Pin) == GPIO_PIN_RESET &&
