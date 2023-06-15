@@ -139,7 +139,9 @@ void initServo(struct ServoMotor *srv,uint16_t min,uint16_t max,uint16_t initVal
 	srv->trgValue = initValue;
 	srv->min = min;
 	srv->max = max;
-	srv->increment = srv == &TopBallsMixer ? 30 : getIncrement(srv);
+	if(srv == &TopBallsMixer) srv->increment = 30;
+	else if(srv == &Position) srv->increment = 10;
+	else srv->increment = getIncrement(srv);
 	srv->chanel = chanel;
 }
 
@@ -148,7 +150,7 @@ void changeIncrement(){
 	MotorTop.increment = getIncrement(&MotorTop);
 	MotorBottom.increment = getIncrement(&MotorBottom);
 	Angle.increment = getIncrement(&Angle);
-	Position.increment = getIncrement(&Position);
+	//Position.increment = getIncrement(&Position);
 	//TopBallsMixer.increment = 10;
 	period = time / 10;//НЕОБХОДИМО РАЗОБРАТЬСЯ ПОЧЕМУ ВЫЧИСЛЯЕТСЯ НЕПРАВИЛЬНОЕ ВРЕМЯ - РАСЧЕТНОЕ ЗНАЧЕНИЕ 20, НО ПРИ НЕМ РАССТОЯНИЕ МЕЖДУ ВЫСТРЕЛАМИ В 2 РАЗА МЕНЬШЕ
 }
