@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include<stdlib.h>
+#include <time.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -61,9 +63,10 @@ uint8_t receivedStr={0};
 //отправляемая строка, содержащая параметры инфраструктуры
 char trStr[60]={0};
 
-uint16_t time = 1000;
+uint16_t time_ = 1000;
 uint16_t time_min = 600;
 uint16_t time_max = 3000;
+uint16_t speed_limit = 1250;
 uint16_t speed_min = 800;
 uint16_t speed_max = 2300;
 uint16_t angle_min = 900;
@@ -74,7 +77,7 @@ uint16_t loader_up = 1250;
 uint16_t loader_down = 500;
 uint16_t mixer_min = 400;
 uint16_t mixer_max = 2400;
-uint16_t start_speed = 840;
+uint16_t start_speed = 850;
 uint16_t start_angle = 1400;
 volatile bool loader_redy = false;
 volatile uint16_t timer_interupt_count;
@@ -83,6 +86,8 @@ volatile bool infIsInetialized = false;
 volatile int tmpInfValue = 0;
 volatile uint8_t loader_timeout = 0;
 volatile uint8_t mixer_end_point = 5;
+volatile long int random_value;
+volatile int random_seed = 0;
 
 struct ServoMotor MotorTop;
 struct ServoMotor MotorBottom;
@@ -107,7 +112,7 @@ static void MX_TIM3_Init(void);
 /* USER CODE BEGIN 0 */
 // Получить значение инкремента исходя из скорости подачи мячей (времени между выстрелами)
 uint8_t getIncrement(struct ServoMotor *srv){
-	return (srv->max - srv->min)*20/(time - 100) + 1;
+	return (srv->max - srv->min)*20/(time_ - 100) + 1;
 }
 
 //Сделать шаг для инфрастуктуры согласно текущему и целевому значениям и значению инкремента (плавно повернуть серво или сменить скорость двигателя)
@@ -152,13 +157,13 @@ void changeIncrement(){
 	Angle.increment = getIncrement(&Angle);
 	//Position.increment = getIncrement(&Position);
 	//TopBallsMixer.increment = 10;
-	period = time / 10;//НЕОБХОДИМО РАЗОБРАТЬСЯ ПОЧЕМУ ВЫЧИСЛЯЕТСЯ НЕПРАВИЛЬНОЕ ВРЕМЯ - РАСЧЕТНОЕ ЗНАЧЕНИЕ 20, НО ПРИ НЕМ РАССТОЯНИЕ МЕЖДУ ВЫСТРЕЛАМИ В 2 РАЗА МЕНЬШЕ
+	period = time_ / 10;//НЕОБХОДИМО РАЗОБРАТЬСЯ ПОЧЕМУ ВЫЧИСЛЯЕТСЯ НЕПРАВИЛЬНОЕ ВРЕМЯ - РАСЧЕТНОЕ ЗНАЧЕНИЕ 20, НО ПРИ НЕМ РАССТОЯНИЕ МЕЖДУ ВЫСТРЕЛАМИ В 2 РАЗА МЕНЬШЕ
 }
 
 //Установить первоначальные значения параметров инфраструктуры (min,max,cur)
 void initInfrastructure(){
-	initServo(&MotorTop,start_speed,speed_max, start_speed,TIM_CHANNEL_1);
-	initServo(&MotorBottom,start_speed,speed_max, start_speed,TIM_CHANNEL_2);
+	initServo(&MotorTop,start_speed,/*speed_max*/speed_limit, start_speed,TIM_CHANNEL_1);
+	initServo(&MotorBottom,start_speed,/*speed_max*/speed_limit, start_speed,TIM_CHANNEL_2);
 	initServo(&Angle,angle_min,angle_max,start_angle,TIM_CHANNEL_3);
 	initServo(&Position,position_min,position_max,start_angle,TIM_CHANNEL_4);
 	initServo(&TopBallsMixer,mixer_min,mixer_max,mixer_min,TIM_CHANNEL_2);
@@ -200,7 +205,7 @@ void getTransStr(uint8_t quarySymbol){
 		memset(trStr, 0, strlen(trStr));//очищаем строку перед заполнением
 		sprintf(trStr,"%s%d%s%d%s%d%s%d%s%d%c",
 				"m:",MotorTop.curValue,"|n:",MotorBottom.curValue,
-				"|a:",Angle.curValue,"|p:",Position.curValue,"|t:",time,'e');
+				"|a:",Angle.curValue,"|p:",Position.curValue,"|t:",time_,'e');
 		break;
 	}
 }
@@ -233,7 +238,7 @@ void UART1_RxCpltCallback(void){
 //				loaderDown(); //�?нициализация выстрела. Далее сработает прерывание от датчика выстрела и лопатка вернется в верхнее положение
 				tmpInfValue = 0;
 				break;
-			case 't': time = tmpInfValue; tmpInfValue = 0; changeIncrement();
+			case 't': time_ = tmpInfValue; tmpInfValue = 0; changeIncrement();
 			default: setInfValue(b); break;
 		}
 
@@ -261,6 +266,11 @@ void loaderServoInteruptHandler(){
 			loader_timeout = 0;
 		}
 	}
+
+/////////Генерация случайного числа (надо заменить time(0) на значение из АЦП)
+	srand(random_seed);
+	random_value = random();
+////////Далее должна идти инициализация новыми значениями всей инфраструктуры
 }
 
 void ballsMixerInteruptHandler(){
@@ -292,9 +302,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
     	ballsMixerInteruptHandler();
     	loaderServoInteruptHandler();
-    }
 
-	timer_interupt_count++;
+    	timer_interupt_count++;
+    	random_seed++;
+    }
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -356,7 +367,7 @@ int main(void)
   motorsInitialization();
   initInfrastructure();	//�?нициализируем инфраструктуру
   //НЕОБХОДИМО РАЗОБРАТЬСЯ ПОЧЕМУ ВЫЧИСЛЯЕТСЯ НЕПРАВИЛЬНОЕ ВРЕМЯ - РАСЧЕТНОЕ ЗНАЧЕНИЕ 20, НО ПРИ НЕМ РАССТОЯНИЕ МЕЖДУ ВЫСТРЕЛАМИ В 2 РАЗА МЕНЬШЕ
-  period = time / 10;	//Устанавливаем первоначальное значение периода между выстрелами
+  period = time_ / 10;	//Устанавливаем первоначальное значение периода между выстрелами
   /* USER CODE END 2 */
 
   /* Infinite loop */
