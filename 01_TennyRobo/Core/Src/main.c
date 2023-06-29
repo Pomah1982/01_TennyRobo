@@ -39,6 +39,11 @@ typedef struct ServoMotor{
 	uint16_t initValue;
 	uint8_t chanel;
 } ServoMotor;
+typedef struct PushParams{
+	uint16_t topSpeed;	// скорость верхнего двигателя
+	uint16_t btSpeed_from;	// начальная скорость нижнего двигателся
+	uint8_t deff;	// диапазон скоростей нижнего двигателя при текущем значении скорости верхнего двигателя
+} PushParams;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -71,14 +76,15 @@ uint16_t speed_min = 800;
 uint16_t speed_max = 2300;
 uint16_t angle_min = 900;
 uint16_t angle_max = 2100;
-uint16_t position_min = 1200;
-uint16_t position_max = 1600;
+uint16_t position_min = 1250;
+uint16_t position_max = 1520;
 uint16_t loader_up = 1250;
 uint16_t loader_down = 500;
 uint16_t mixer_min = 400;
 uint16_t mixer_max = 2400;
 uint16_t start_speed = 850;
 uint16_t start_angle = 1400;
+uint16_t start_position = 1350;
 volatile bool loader_redy = false;
 volatile uint16_t timer_interupt_count;
 volatile uint16_t period;
@@ -87,7 +93,27 @@ volatile int tmpInfValue = 0;
 volatile uint8_t loader_timeout = 0;
 volatile uint8_t mixer_end_point = 5;
 volatile long int random_value;
-volatile int random_seed = 0;
+volatile PushParams currPreset = {};
+PushParams infParams[18] = {
+		  {850,920,50},
+		  {870,900,50},
+		  {890,890,50},
+		  {900,900,1},
+		  {910,880,50},
+		  {910,910,1},
+		  {920,920,1},
+		  {930,870,50},
+		  {930,930,1},
+		  {940,940,1},
+		  {950,860,50},
+		  {950,950,1},
+		  {970,850,60},
+		  {990,850,60},
+		  {1010,850,50},
+		  {1030,850,40},
+		  {1050,850,30},
+		  {1060,850,1}
+};
 
 struct ServoMotor MotorTop;
 struct ServoMotor MotorBottom;
@@ -95,6 +121,7 @@ struct ServoMotor Angle;
 struct ServoMotor Position;
 struct ServoMotor Loader;	//механизм подачи мячей
 struct ServoMotor TopBallsMixer; //перемешиватель мячей в чаше пушки
+PushParams InfParapms[18];	// массив параметров выстрела (допустимые скорости моторов)
 
 /* USER CODE END PV */
 
@@ -150,6 +177,7 @@ void initServo(struct ServoMotor *srv,uint16_t min,uint16_t max,uint16_t initVal
 	srv->chanel = chanel;
 }
 
+
 //Установить новое значение инкремента для инфраструктуры
 void changeIncrement(){
 	MotorTop.increment = getIncrement(&MotorTop);
@@ -165,7 +193,7 @@ void initInfrastructure(){
 	initServo(&MotorTop,start_speed,/*speed_max*/speed_limit, start_speed,TIM_CHANNEL_1);
 	initServo(&MotorBottom,start_speed,/*speed_max*/speed_limit, start_speed,TIM_CHANNEL_2);
 	initServo(&Angle,angle_min,angle_max,start_angle,TIM_CHANNEL_3);
-	initServo(&Position,position_min,position_max,start_angle,TIM_CHANNEL_4);
+	initServo(&Position,position_min,position_max,start_position,TIM_CHANNEL_4);
 	initServo(&TopBallsMixer,mixer_min,mixer_max,mixer_min,TIM_CHANNEL_2);
 }
 
@@ -251,8 +279,10 @@ void UART1_RxCpltCallback(void){
 
 void loaderServoInteruptHandler(){
 	if(timer_interupt_count >= period){
-		if(/*loader_redy*/ HAL_GPIO_ReadPin(GPIOA, LOAD_SENSOR_Pin) == GPIO_PIN_RESET &&
-				(MotorTop.curValue > MotorTop.min || MotorBottom.curValue > MotorBottom.min)){	//Не обрабатываем прерывания до тех пор пока не запустится хотябы один из двигателей
+		if(
+				HAL_GPIO_ReadPin(GPIOA, LOAD_SENSOR_Pin) == GPIO_PIN_RESET &&
+				(MotorTop.curValue > MotorTop.min || MotorBottom.curValue > MotorBottom.min)
+				){	//Не обрабатываем прерывания до тех пор пока не запустится хотябы один из двигателей
 			loaderDown();
 			timer_interupt_count = 0; //сбрасываем счетчик прерываний, чтоб начать заново отчет времени до следующего выстрела
 			loader_timeout = 10;
@@ -264,13 +294,21 @@ void loaderServoInteruptHandler(){
 		if(--loader_timeout == 1){
 			loaderUp();
 			loader_timeout = 0;
-		}
-	}
 
 /////////Генерация случайного числа (надо заменить time(0) на значение из АЦП)
-	srand(random_seed);
-	random_value = random();
-////////Далее должна идти инициализация новыми значениями всей инфраструктуры
+	srand(HAL_GetTick()); random_value = random();
+////////инициализация новыми значениями всей инфраструктуры
+	currPreset = infParams[random_value % (sizeof(infParams)/6)];//инициализируем рандомное значение пресета настроек двигатетелй
+	srand(HAL_GetTick()); random_value = random();
+	MotorTop.trgValue = currPreset.topSpeed;
+	srand(HAL_GetTick()); random_value = random();
+	MotorBottom.trgValue = currPreset.btSpeed_from + (random_value % currPreset.deff);
+	srand(HAL_GetTick()); random_value = random();
+	Angle.trgValue = Angle.min + (random_value % (Angle.max - Angle.min));
+	srand(HAL_GetTick()); random_value = random();
+	Position.trgValue = Position.min + (random_value % 9)*30;
+		}
+	}
 }
 
 void ballsMixerInteruptHandler(){
@@ -304,7 +342,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     	loaderServoInteruptHandler();
 
     	timer_interupt_count++;
-    	random_seed++;
     }
 }
 
@@ -373,6 +410,9 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   infIsInetialized = true;	//устанавливаем разрешение на обработку изменений состояний серво и моторов
+
+
+
 
   while (1)
   {
