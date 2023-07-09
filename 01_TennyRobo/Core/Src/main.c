@@ -76,15 +76,15 @@ uint16_t speed_min = 800;
 uint16_t speed_max = 2300;
 uint16_t angle_min = 900;
 uint16_t angle_max = 2100;
-uint16_t position_min = 1250;
-uint16_t position_max = 1520;
-uint16_t loader_up = 1250;
+uint16_t position_min = 1280;
+uint16_t position_max = 1490;
+uint16_t loader_up = 1280;
 uint16_t loader_down = 500;
 uint16_t mixer_min = 400;
 uint16_t mixer_max = 2400;
 uint16_t start_speed = 850;
 uint16_t start_angle = 1400;
-uint16_t start_position = 1350;
+uint16_t start_position = 1370;
 volatile bool loader_redy = false;
 volatile uint16_t timer_interupt_count;
 volatile uint16_t period;
@@ -94,25 +94,26 @@ volatile uint8_t loader_timeout = 0;
 volatile uint8_t mixer_end_point = 5;
 volatile long int random_value;
 volatile PushParams currPreset = {};
-PushParams infParams[18] = {
+volatile bool permit = false;
+PushParams infParams[9] = {
 		  {850,920,50},
 		  {870,900,50},
 		  {890,890,50},
-		  {900,900,1},
+//		  {900,900,1},
 		  {910,880,50},
-		  {910,910,1},
+//		  {910,910,1},
 		  {920,920,1},
-		  {930,870,50},
-		  {930,930,1},
+		  {930,870,60},
+//		  {930,930,1},
 		  {940,940,1},
 		  {950,860,50},
-		  {950,950,1},
-		  {970,850,60},
+//		  {950,950,1},
+		  {970,850,60}/*,
 		  {990,850,60},
 		  {1010,850,50},
 		  {1030,850,40},
 		  {1050,850,30},
-		  {1060,850,1}
+		  {1060,850,1}*/
 };
 
 struct ServoMotor MotorTop;
@@ -261,7 +262,8 @@ void UART1_RxCpltCallback(void){
 				tmpInfValue = 0;
 				break;
 			case 'b': HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-				timer_interupt_count = period - 2; //Через 2*20мс прерывание TIM2 обработает нажатие кнопки и опустит, а потом поднимет лопатку loader-а
+						permit = !permit;
+				//timer_interupt_count = period - 2; //Через 2*20мс прерывание TIM2 обработает нажатие кнопки и опустит, а потом поднимет лопатку loader-а
 //				timer_interupt_count = 0; //сбрасываем счетчик прерываний, считающий время до следующего выстрела
 //				loaderDown(); //�?нициализация выстрела. Далее сработает прерывание от датчика выстрела и лопатка вернется в верхнее положение
 				tmpInfValue = 0;
@@ -280,8 +282,9 @@ void UART1_RxCpltCallback(void){
 void loaderServoInteruptHandler(){
 	if(timer_interupt_count >= period){
 		if(
-				HAL_GPIO_ReadPin(GPIOA, LOAD_SENSOR_Pin) == GPIO_PIN_RESET &&
-				(MotorTop.curValue > MotorTop.min || MotorBottom.curValue > MotorBottom.min)
+				HAL_GPIO_ReadPin(GPIOA, LOAD_SENSOR_Pin) == GPIO_PIN_RESET && permit
+				/*&&
+				(MotorTop.curValue > MotorTop.min || MotorBottom.curValue > MotorBottom.min)*/
 				){	//Не обрабатываем прерывания до тех пор пока не запустится хотябы один из двигателей
 			loaderDown();
 			timer_interupt_count = 0; //сбрасываем счетчик прерываний, чтоб начать заново отчет времени до следующего выстрела
@@ -306,7 +309,7 @@ void loaderServoInteruptHandler(){
 	srand(HAL_GetTick()); random_value = random();
 	Angle.trgValue = Angle.min + (random_value % (Angle.max - Angle.min));
 	srand(HAL_GetTick()); random_value = random();
-	Position.trgValue = Position.min + (random_value % 9)*30;
+	Position.trgValue = Position.min + (random_value % 7)*30;
 		}
 	}
 }
