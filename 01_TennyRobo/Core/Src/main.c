@@ -109,7 +109,7 @@ PushParams infParams[9] = {
 		  {890,950,3,false},
 		  {890,950,4,false}
 };
-volatile PushParams currentSet = {};
+volatile PushParams currModifiedItem = {};
 volatile bool isSettingsMode = false;
 
 struct ServoMotor MotorTop;
@@ -211,19 +211,19 @@ void setInfValue(char endSymbol){
 	case 'a': Angle.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ УГОЛ SPIN-a
 	case 'p': Position.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ ПОВОРОТ РОБОТА ВЛЕВО/ВПРАВО
 	case 'x' : {
-		currentSet.speedFrom = tmpInfValue;
+		currModifiedItem.speedFrom = tmpInfValue;
 		MotorTop.trgValue = tmpInfValue;
-		MotorBottom.trgValue = tmpInfValue + currentSet.spin * 30;
+		MotorBottom.trgValue = tmpInfValue + currModifiedItem.spin * 30;
 		break;
 	}
 	case 'y': {
-		currentSet.speedTo = tmpInfValue;
+		currModifiedItem.speedTo = tmpInfValue;
 		MotorTop.trgValue = tmpInfValue;
-		MotorBottom.trgValue = tmpInfValue + currentSet.spin * 30;
+		MotorBottom.trgValue = tmpInfValue + currModifiedItem.spin * 30;
 		break;
 	}
 	case 'u': {
-		currentSet.inGame = tmpInfValue == 1;
+		currModifiedItem.inGame = tmpInfValue == 1;
 	}
 	case 'b': {
 		permit = tmpInfValue == 1;
@@ -248,8 +248,8 @@ void getTransStr(uint8_t quarySymbol){
 	case 'i':
 		memset(trStr, 0, strlen(trStr));//очищаем строку перед заполнением
 		sprintf(trStr,"%s%d%s%d%s%d%s%d%s%d%s%d%c",
-				"x:",currentSet.speedFrom,"|y:",currentSet.speedTo,
-				"|u:",currentSet.inGame ? 1 : 0,
+				"x:",currModifiedItem.speedFrom,"|y:",currModifiedItem.speedTo,
+				"|u:",currModifiedItem.inGame ? 1 : 0,
 				"|a:",Angle.curValue,"|p:",Position.curValue,"|t:",time_,'e');
 		break;
 	}
@@ -279,7 +279,7 @@ void UART1_RxCpltCallback(void){
 				tmpInfValue = 0;
 				break;
 			case 'r':
-				currentSet = infParams[tmpInfValue + 4];
+				currModifiedItem = infParams[tmpInfValue + 4];
 				getTransStr(b);
 				HAL_UART_Transmit(&huart1, (uint8_t*)trStr, strlen(trStr),0x1000);
 				tmpInfValue = 0;
@@ -292,9 +292,9 @@ void UART1_RxCpltCallback(void){
 //				tmpInfValue = 0;
 //				break;
 			case 't': time_ = tmpInfValue; tmpInfValue = 0; changeIncrement();
-			case 'c': infParams[currentSet.spin + 4] = currentSet;
+			case 'c': infParams[currModifiedItem.spin + 4] = currModifiedItem;
 			case 'w': isSettingsMode = tmpInfValue == 1;
-			case 'u': currentSet.inGame = tmpInfValue == 1;
+			case 'u': currModifiedItem.inGame = tmpInfValue == 1;
 			default: setInfValue(b); break;
 		}
 
@@ -401,7 +401,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	currentSet = infParams[4];
+	currModifiedItem = infParams[4];
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
