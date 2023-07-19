@@ -294,6 +294,7 @@ void UART1_RxCpltCallback(void){
 			case 't': time_ = tmpInfValue; tmpInfValue = 0; changeIncrement();
 			case 'c': infParams[currentSet.spin + 4] = currentSet;
 			case 'w': isSettingsMode = tmpInfValue == 1;
+			case 'u': currentSet.inGame = tmpInfValue == 1;
 			default: setInfValue(b); break;
 		}
 
