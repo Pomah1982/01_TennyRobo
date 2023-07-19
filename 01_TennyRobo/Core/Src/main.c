@@ -40,10 +40,13 @@ typedef struct ServoMotor{
 	uint8_t chanel;
 } ServoMotor;
 typedef struct PushParams{
-	uint16_t topSpeed;	// скорость верхнего двигателя
-	uint16_t btSpeed_from;	// начальная скорость нижнего двигателся
-	uint8_t deff;	// диапазон скоростей нижнего двигателя при текущем значении скорости верхнего двигателя
+	int8_t spin;	//уровень spin-а (т.к. ведущий - верхний двигатель, то отриц значения - topSpin, положительные - botSpin
+	uint16_t speedFrom;	// начальная скорость верхнего (ведущего) двигателя
+	uint16_t speedTo;	// предельная (максимальная) скорость верхнего (ведущего) двигателя
+	bool inGame;	// участвует ли данная настройка выстрела в игре
+
 } PushParams;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -96,25 +99,18 @@ volatile long int random_value;
 volatile PushParams currPreset = {};
 volatile bool permit = false;
 PushParams infParams[9] = {
-		  {850,920,50},
-		  {870,900,50},
-		  {890,890,50},
-//		  {900,900,1},
-		  {910,880,50},
-//		  {910,910,1},
-		  {920,920,1},
-		  {930,870,60},
-//		  {930,930,1},
-		  {940,940,1},
-		  {950,860,50},
-//		  {950,950,1},
-		  {970,850,60}/*,
-		  {990,850,60},
-		  {1010,850,50},
-		  {1030,850,40},
-		  {1050,850,30},
-		  {1060,850,1}*/
+		  {890,950,-4,false},
+		  {890,950,-3,false},
+		  {890,950,-2,false},
+		  {890,950,-1,false},
+		  {890,950,0,true},
+		  {890,950,1,false},
+		  {890,950,2,false},
+		  {890,950,3,false},
+		  {890,950,4,false}
 };
+volatile PushParams currentSet = {};
+volatile bool isSettingsMode = false;
 
 struct ServoMotor MotorTop;
 struct ServoMotor MotorBottom;
@@ -122,7 +118,6 @@ struct ServoMotor Angle;
 struct ServoMotor Position;
 struct ServoMotor Loader;	//механизм подачи мячей
 struct ServoMotor TopBallsMixer; //перемешиватель мячей в чаше пушки
-PushParams InfParapms[18];	// массив параметров выстрела (допустимые скорости моторов)
 
 /* USER CODE END PV */
 
@@ -211,10 +206,28 @@ void loaderDown(){
 //Установить значения целевых параметров инфраструктуры согласно полученным с android параметрам
 void setInfValue(char endSymbol){
 	switch (endSymbol){
-	case 'm': MotorTop.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ СКОРОСТЬ ПЕРВОГО ДВ�?ГАТЕЛЯ
-	case 'n': MotorBottom.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ СКОРОСТЬ ВТОРОГО ДВ�?ГАТЕЛЯ
+//	case 'm': MotorTop.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ СКОРОСТЬ ПЕРВОГО ДВ�?ГАТЕЛЯ
+//	case 'n': MotorBottom.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ СКОРОСТЬ ВТОРОГО ДВ�?ГАТЕЛЯ
 	case 'a': Angle.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ УГОЛ SPIN-a
 	case 'p': Position.trgValue = tmpInfValue; break;	//УСТАНАВЛ�?ВАЕМ ПОВОРОТ РОБОТА ВЛЕВО/ВПРАВО
+	case 'x' : {
+		currentSet.speedFrom = tmpInfValue;
+		MotorTop.trgValue = tmpInfValue;
+		MotorBottom.trgValue = tmpInfValue + currentSet.spin * 30;
+		break;
+	}
+	case 'y': {
+		currentSet.speedTo = tmpInfValue;
+		MotorTop.trgValue = tmpInfValue;
+		MotorBottom.trgValue = tmpInfValue + currentSet.spin * 30;
+		break;
+	}
+	case 'u': {
+		currentSet.inGame = tmpInfValue == 1;
+	}
+	case 'b': {
+		permit = tmpInfValue == 1;
+	}
 	default: break;
 	}
 	tmpInfValue = 0;
@@ -227,13 +240,16 @@ void getTransStr(uint8_t quarySymbol){
 	case 'l':
 		memset(trStr, 0, strlen(trStr));//очищаем строку перед заполнением
 		sprintf(trStr,"%s%d%c%d%s%d%c%d%s%d%c%d%s%d%c%d%s%d%c%d%c",
-				"m:",MotorTop.min,':',MotorTop.max,"|n:",MotorBottom.min,':',MotorBottom.max,
+				"r:",-4,':',4,"|x:",850,':',970,
 				"|a:",Angle.min,':',Angle.max,"|p:",Position.min,':',Position.max,"|t:",time_min,':',time_max,'e');
 		break;
 	case 'g':
+	case 'r':
+	case 'i':
 		memset(trStr, 0, strlen(trStr));//очищаем строку перед заполнением
-		sprintf(trStr,"%s%d%s%d%s%d%s%d%s%d%c",
-				"m:",MotorTop.curValue,"|n:",MotorBottom.curValue,
+		sprintf(trStr,"%s%d%s%d%s%d%s%d%s%d%s%d%c",
+				"x:",currentSet.speedFrom,"|y:",currentSet.speedTo,
+				"|u:",currentSet.inGame ? 1 : 0,
 				"|a:",Angle.curValue,"|p:",Position.curValue,"|t:",time_,'e');
 		break;
 	}
@@ -253,7 +269,8 @@ void motorsInitialization(){
 void UART1_RxCpltCallback(void){
 	uint8_t b;
 	b = receivedStr;
-	if(b =='l' || b=='g' || b=='m' || b=='n' || b=='a' || b=='p' || b=='b' || b=='t'){
+	if(b =='l' || b=='g' || b=='m' || b=='n' || b=='a' || b=='p' || b=='b' || b=='t'
+			|| b=='r'|| b=='u'|| b=='i'|| b=='w'|| b=='x'|| b=='y'|| b=='c'){
 		switch (b) {
 			case 'l':
 			case 'g':
@@ -261,14 +278,22 @@ void UART1_RxCpltCallback(void){
 				HAL_UART_Transmit(&huart1, (uint8_t*)trStr, strlen(trStr),0x1000);
 				tmpInfValue = 0;
 				break;
-			case 'b': HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-						permit = !permit;
-				//timer_interupt_count = period - 2; //Через 2*20мс прерывание TIM2 обработает нажатие кнопки и опустит, а потом поднимет лопатку loader-а
-//				timer_interupt_count = 0; //сбрасываем счетчик прерываний, считающий время до следующего выстрела
-//				loaderDown(); //�?нициализация выстрела. Далее сработает прерывание от датчика выстрела и лопатка вернется в верхнее положение
+			case 'r':
+				currentSet = infParams[tmpInfValue + 4];
+				getTransStr(b);
+				HAL_UART_Transmit(&huart1, (uint8_t*)trStr, strlen(trStr),0x1000);
 				tmpInfValue = 0;
 				break;
+//			case 'b': HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+//						permit = !permit;
+//				//timer_interupt_count = period - 2; //Через 2*20мс прерывание TIM2 обработает нажатие кнопки и опустит, а потом поднимет лопатку loader-а
+////				timer_interupt_count = 0; //сбрасываем счетчик прерываний, считающий время до следующего выстрела
+////				loaderDown(); //�?нициализация выстрела. Далее сработает прерывание от датчика выстрела и лопатка вернется в верхнее положение
+//				tmpInfValue = 0;
+//				break;
 			case 't': time_ = tmpInfValue; tmpInfValue = 0; changeIncrement();
+			case 'c': infParams[currentSet.spin + 4] = currentSet;
+			case 'w': isSettingsMode = tmpInfValue == 1;
 			default: setInfValue(b); break;
 		}
 
@@ -298,18 +323,24 @@ void loaderServoInteruptHandler(){
 			loaderUp();
 			loader_timeout = 0;
 
-/////////Генерация случайного числа (надо заменить time(0) на значение из АЦП)
-	srand(HAL_GetTick()); random_value = random();
-////////инициализация новыми значениями всей инфраструктуры
-	currPreset = infParams[random_value % (sizeof(infParams)/6)];//инициализируем рандомное значение пресета настроек двигатетелй
-	srand(HAL_GetTick()); random_value = random();
-	MotorTop.trgValue = currPreset.topSpeed;
-	srand(HAL_GetTick()); random_value = random();
-	MotorBottom.trgValue = currPreset.btSpeed_from + (random_value % currPreset.deff);
-	srand(HAL_GetTick()); random_value = random();
-	Angle.trgValue = Angle.min + (random_value % (Angle.max - Angle.min));
-	srand(HAL_GetTick()); random_value = random();
-	Position.trgValue = Position.min + (random_value % 7)*30;
+			if(!isSettingsMode){	//Если это рабочий режим
+				/////////Генерация случайного числа (надо заменить time(0) на значение из АЦП)
+					srand(HAL_GetTick()); random_value = random();
+				////////инициализация новыми значениями всей инфраструктуры
+					currPreset = infParams[random_value % (sizeof(infParams)/6)];//инициализируем рандомное значение пресета настроек двигатетелй
+					srand(HAL_GetTick()); random_value = random();
+					uint16_t topSpeed = currPreset.speedFrom + random_value%((currPreset.speedFrom-currPreset.speedTo)/10 + 1)*10;
+					MotorTop.trgValue = topSpeed;
+					MotorBottom.trgValue = topSpeed + currPreset.spin*30;
+					srand(HAL_GetTick()+random_value); random_value = random();
+					Angle.trgValue = Angle.min + (random_value % (Angle.max - Angle.min));
+					srand(HAL_GetTick()*3); random_value = random();
+					Position.trgValue = Position.min + (random_value % 7)*30;
+			}
+			else{	//Если это режим настроек
+				//Установка всех параметров будет происходить с android приложения
+			}
+
 		}
 	}
 }
@@ -369,7 +400,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+	currentSet = infParams[4];
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
